@@ -19,6 +19,13 @@ import { auth, db, isFirebaseConfigured } from './firebase';
 
 const TOKEN_KEY = 'finline_advisor_token';
 const SUBMISSIONS_COLLECTION = 'submissions';
+export const AUTHORIZED_ADVISOR_EMAIL = 'fortysinbox@gmail.com';
+export const UNAUTHORIZED_ADVISOR_MSG =
+  'Not authorized — this portal is restricted to the authorized advisor account. Please sign in with the authorized Google account.';
+
+export function isAuthorizedAdvisorEmail(email?: string | null): boolean {
+  return String(email || '').trim().toLowerCase() === AUTHORIZED_ADVISOR_EMAIL;
+}
 
 export function getBackendMode(): 'firebase' | 'local' {
   return isFirebaseConfigured && auth && db ? 'firebase' : 'local';
@@ -84,9 +91,14 @@ export async function apiAdvisorGoogleLogin(): Promise<{
   provider.setCustomParameters({ prompt: 'select_account' });
   try {
     const cred = await signInWithPopup(auth, provider);
+    const userEmail = cred.user.email || '';
+    if (!isAuthorizedAdvisorEmail(userEmail)) {
+      await signOut(auth);
+      throw new Error(UNAUTHORIZED_ADVISOR_MSG);
+    }
     return {
       advisor: {
-        email: cred.user.email || '',
+        email: userEmail,
         name: cred.user.displayName || 'FIN-Line Advisor'
       }
     };
@@ -112,9 +124,14 @@ export async function apiAdvisorLogout(): Promise<void> {
 export async function apiCheckSession(): Promise<{ email: string; name: string } | null> {
   if (getBackendMode() === 'firebase' && auth) {
     return new Promise((resolve) => {
-      const unsubscribe = onAuthStateChanged(auth!, (user) => {
+      const unsubscribe = onAuthStateChanged(auth!, async (user) => {
         unsubscribe();
         if (user) {
+          if (!isAuthorizedAdvisorEmail(user.email)) {
+            await signOut(auth!).catch(() => {});
+            resolve(null);
+            return;
+          }
           resolve({
             email: user.email || '',
             name: user.displayName || 'FIN-Line Advisor'

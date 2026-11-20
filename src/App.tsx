@@ -40,7 +40,8 @@ import {
   apiDeleteSubmission,
   apiFetchSubmissions,
   apiSubmitApplication,
-  apiUpdateSubmission
+  apiUpdateSubmission,
+  isAuthorizedAdvisorEmail
 } from './utils/api';
 import { isRmdBlocked } from './utils/calculations';
 import {
@@ -685,12 +686,18 @@ export default function App() {
         open={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         onUnlock={async (advisor) => {
+          if (!isAuthorizedAdvisorEmail(advisor.email)) {
+            await apiAdvisorLogout().catch(() => {});
+            setIsAdvisor(false);
+            setAdvisorEmail('');
+            return;
+          }
           setLoginModalOpen(false);
           setIsAdvisor(true);
           setAdvisorEmail(advisor.email || '');
           setAdvisorTab('inbox');
           await refreshSubmissionsFromServer();
-          addToast(`Signed in as ${advisor.email || 'Advisor'}`);
+          addToast(`Signed in as ${advisor.email}`);
         }}
       />
 
