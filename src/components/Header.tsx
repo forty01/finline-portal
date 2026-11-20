@@ -22,6 +22,7 @@ export type AdvisorTab = 'inbox' | 'carrier-sheet' | 'edit-form' | 'calculators'
 
 interface HeaderProps {
   isAdvisor: boolean;
+  advisorEmail?: string;
   advisorTab: AdvisorTab;
   onChangeAdvisorTab: (tab: AdvisorTab) => void;
   casesCount: number;
@@ -37,6 +38,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   isAdvisor,
+  advisorEmail = '',
   advisorTab,
   onChangeAdvisorTab,
   casesCount,
@@ -234,9 +236,14 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
 
-                <button type="button" onClick={onExitAdvisor} className="btn btn-sm btn-gold">
+                <button
+                  id="btnAdvisorSignOut"
+                  type="button"
+                  onClick={onExitAdvisor}
+                  className="btn btn-sm btn-gold"
+                >
                   <LogOut size={14} />
-                  <span>Client Form View</span>
+                  <span>Sign out</span>
                 </button>
               </>
             ) : (
@@ -273,6 +280,24 @@ export const Header: React.FC<HeaderProps> = ({
                 ADVISOR BACK-OFFICE ACTIVE — View Client Submissions, Copy Fields Into Any Carrier Portal, Check IGO Compliance &amp; Run Calculators
               </span>
             </div>
+            {advisorEmail && (
+              <div
+                id="advisorSignedInEmail"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'rgba(15, 23, 42, 0.14)',
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: '#020617'
+                }}
+              >
+                <span>Signed in as {advisorEmail}</span>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -72,6 +72,7 @@ export default function App() {
 
   // Advisor back-office state (authenticated via backend)
   const [isAdvisor, setIsAdvisor] = useState<boolean>(false);
+  const [advisorEmail, setAdvisorEmail] = useState<string>('');
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
   const [advisorTab, setAdvisorTab] = useState<AdvisorTab>('inbox');
   const [cases, setCases] = useState<ClientCase[]>([]);
@@ -96,6 +97,7 @@ export default function App() {
       .then((advisor) => {
         if (advisor) {
           setIsAdvisor(true);
+          setAdvisorEmail(advisor.email || '');
           return apiFetchSubmissions().then((list) => {
             const normalized = list.map((item) => createDefaultCase(item));
             setCases(normalized);
@@ -490,6 +492,7 @@ export default function App() {
     <div className="app-shell">
       <Header
         isAdvisor={isAdvisor}
+        advisorEmail={advisorEmail}
         advisorTab={advisorTab}
         onChangeAdvisorTab={setAdvisorTab}
         casesCount={cases.length}
@@ -501,6 +504,9 @@ export default function App() {
         onExitAdvisor={() => {
           apiAdvisorLogout().finally(() => {
             setIsAdvisor(false);
+            setAdvisorEmail('');
+            setCases([]);
+            setSelectedCaseId('');
             setSubmittedReceipt(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             addToast('Signed out of Advisor Portal.');
@@ -678,12 +684,13 @@ export default function App() {
       <AdvisorLoginModal
         open={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
-        onUnlock={async () => {
+        onUnlock={async (advisor) => {
           setLoginModalOpen(false);
           setIsAdvisor(true);
+          setAdvisorEmail(advisor.email || '');
           setAdvisorTab('inbox');
           await refreshSubmissionsFromServer();
-          addToast('Signed in to Advisor Back-Office');
+          addToast(`Signed in as ${advisor.email || 'Advisor'}`);
         }}
       />
 
