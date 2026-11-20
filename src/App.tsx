@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,6 +13,7 @@ import { CasesDashboard } from './components/CasesDashboard';
 import { ClientSubmittedView } from './components/ClientSubmittedView';
 import { ConfirmModal } from './components/ConfirmModal';
 import { Header, type AdvisorTab } from './components/Header';
+import { ResumeLinkBar } from './components/ResumeLinkBar';
 import { Stepper } from './components/Stepper';
 import { StrategistSidebar } from './components/StrategistSidebar';
 import { ToastContainer } from './components/ToastContainer';
@@ -37,8 +38,11 @@ import type {
 import {
   apiAdvisorLogout,
   apiCheckSession,
+  apiDeleteDraft,
   apiDeleteSubmission,
   apiFetchSubmissions,
+  apiLoadDraft,
+  apiSaveDraft,
   apiSubmitApplication,
   apiUpdateSubmission,
   isAuthorizedAdvisorEmail
@@ -50,8 +54,18 @@ import {
   exportCasesCSV,
   generateFactFinderPDF
 } from './utils/exports';
+import {
+  buildResumeUrl,
+  generateResumeToken,
+  isValidEmail,
+  queueAdvisorCompletedEmail,
+  queueAdvisorStartedEmail,
+  queueClientResumeEmail
+} from './utils/notifications';
 
 const CLIENT_DRAFT_KEY = 'finline_client_draft_v3';
+const RESUME_TOKEN_KEY = 'finline_resume_token_v1';
+const NOTIFIED_TOKENS_KEY = 'finline_notified_tokens_v1';
 
 function loadClientDraft(): ClientCase {
   try {
@@ -65,11 +79,59 @@ function loadClientDraft(): ClientCase {
   return createDefaultCase();
 }
 
+function loadOrCreateResumeToken(): string {
+  try {
+    const existing = localStorage.getItem(RESUME_TOKEN_KEY);
+    if (existing && existing.length >= 32) return existing;
+    const fresh = generateResumeToken();
+    localStorage.setItem(RESUME_TOKEN_KEY, fresh);
+    return fresh;
+  } catch {
+    return generateResumeToken();
+  }
+}
+
+function getNotifiedTokens(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIFIED_TOKENS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function markTokenNotified(token: string, email: string): void {
+  try {
+    const map = getNotifiedTokens();
+    map[token] = email;
+    localStorage.setItem(NOTIFIED_TOKENS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+function hasClientStartedDraft(c: ClientCase): boolean {
+  return Boolean(
+    c.track ||
+      c.goals.length > 0 ||
+      c.ownerName.trim() ||
+      c.ownerEmail.trim() ||
+      c.annualIncome.trim() ||
+      c.estimatedPremium.trim()
+  );
+}
+
 export default function App() {
   // Client-facing application state (blank by default)
   const [clientDraft, setClientDraft] = useState<ClientCase>(() => loadClientDraft());
+  const [resumeToken, setResumeToken] = useState<string>(() => loadOrCreateResumeToken());
+  const [cloudDraftSaved, setCloudDraftSaved] = useState<boolean>(false);
+  const [resumeEmailedTo, setResumeEmailedTo] = useState<string>(() => {
+    const tok = loadOrCreateResumeToken();
+    return getNotifiedTokens()[tok] || '';
+  });
   const [submittedReceipt, setSubmittedReceipt] = useState<ClientCase | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const notifyInFlightRef = useRef<boolean>(false);
 
   // Advisor back-office state (authenticated via backend)
   const [isAdvisor, setIsAdvisor] = useState<boolean>(false);
@@ -92,6 +154,51 @@ export default function App() {
     [cases, selectedCaseId]
   );
 
+  const clientStarted = useMemo(() => hasClientStartedDraft(clientDraft), [clientDraft]);
+  const resumeUrl = useMemo(() => buildResumeUrl(resumeToken), [resumeToken]);
+
+  const addToast = (
+    message: string,
+    type: 'success' | 'warning' | 'error' = 'success'
+  ) => {
+    const id = 't_' + Date.now() + Math.random().toString(36).slice(2, 5);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3400);
+  };
+
+  // Restore cloud draft if ?resume=<token> is present in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('resume')?.trim() || '';
+    if (urlToken.length < 32) return;
+
+    apiLoadDraft(urlToken).then((loaded) => {
+      if (loaded) {
+        const normalized = createDefaultCase(loaded);
+        setClientDraft(normalized);
+        setResumeToken(urlToken);
+        setCloudDraftSaved(true);
+        try {
+          localStorage.setItem(RESUME_TOKEN_KEY, urlToken);
+          localStorage.setItem(CLIENT_DRAFT_KEY, JSON.stringify(normalized));
+        } catch {
+          // ignore
+        }
+        // Prevent duplicate "Started" advisor alert when resuming an already-started draft
+        if (normalized.ownerName.trim().length >= 2 && isValidEmail(normalized.ownerEmail)) {
+          markTokenNotified(urlToken, normalized.ownerEmail.trim());
+          setResumeEmailedTo(normalized.ownerEmail.trim());
+        }
+        addToast('Welcome back! Your saved application progress has been restored.');
+      } else {
+        addToast('That resume link has expired or was already submitted.', 'warning');
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Check if advisor already has a valid session token on mount
   useEffect(() => {
     apiCheckSession()
@@ -111,7 +218,7 @@ export default function App() {
       });
   }, []);
 
-  // Auto-save client's in-progress draft locally so they don't lose work on refresh
+  // Fast path: auto-save client's in-progress draft locally on every edit
   useEffect(() => {
     try {
       localStorage.setItem(CLIENT_DRAFT_KEY, JSON.stringify(clientDraft));
@@ -121,16 +228,44 @@ export default function App() {
     }
   }, [clientDraft]);
 
-  const addToast = (
-    message: string,
-    type: 'success' | 'warning' | 'error' = 'success'
-  ) => {
-    const id = 't_' + Date.now() + Math.random().toString(36).slice(2, 5);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3400);
-  };
+  // Cloud resume path: debounced sync to separate Firestore `drafts/{token}` collection once started
+  useEffect(() => {
+    if (isAdvisor || submittedReceipt || !clientStarted) return;
+    const timer = setTimeout(() => {
+      apiSaveDraft(resumeToken, clientDraft).then((ok) => {
+        if (ok) setCloudDraftSaved(true);
+      });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [clientDraft, clientStarted, isAdvisor, resumeToken, submittedReceipt]);
+
+  // One-time "Started" advisor email + client resume link email once name + valid email are entered
+  useEffect(() => {
+    if (isAdvisor || submittedReceipt) return;
+    const nameReady = clientDraft.ownerName.trim().length >= 2;
+    const emailReady = isValidEmail(clientDraft.ownerEmail);
+    if (!nameReady || !emailReady) return;
+    if (getNotifiedTokens()[resumeToken] || notifyInFlightRef.current) return;
+
+    const timer = setTimeout(async () => {
+      if (getNotifiedTokens()[resumeToken] || notifyInFlightRef.current) return;
+      notifyInFlightRef.current = true;
+      const clientEmail = clientDraft.ownerEmail.trim();
+      markTokenNotified(resumeToken, clientEmail);
+      try {
+        // Ensure cloud draft is written before emailing the resume link
+        const savedOk = await apiSaveDraft(resumeToken, clientDraft);
+        if (savedOk) setCloudDraftSaved(true);
+        await queueAdvisorStartedEmail(clientDraft);
+        const sentResume = await queueClientResumeEmail(clientDraft, buildResumeUrl(resumeToken));
+        if (sentResume) setResumeEmailedTo(clientEmail);
+      } finally {
+        notifyInFlightRef.current = false;
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [clientDraft, isAdvisor, resumeToken, submittedReceipt]);
 
   const refreshSubmissionsFromServer = async () => {
     try {
@@ -177,15 +312,29 @@ export default function App() {
     });
   };
 
-  const handleConfirmClearDraft = () => {
+  const rotateFreshDraftSession = () => {
+    const freshToken = generateResumeToken();
+    setResumeToken(freshToken);
+    setCloudDraftSaved(false);
+    setResumeEmailedTo('');
     try {
       localStorage.removeItem(CLIENT_DRAFT_KEY);
+      localStorage.setItem(RESUME_TOKEN_KEY, freshToken);
     } catch {
       // ignore
     }
+    if (window.location.search.includes('resume=')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  };
+
+  const handleConfirmClearDraft = () => {
+    const oldToken = resumeToken;
+    apiDeleteDraft(oldToken).catch(() => {});
     setClientDraft(createDefaultCase());
     setSubmittedReceipt(null);
     setClearDraftModalOpen(false);
+    rotateFreshDraftSession();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     addToast('Form cleared — ready to start fresh.');
   };
@@ -218,8 +367,16 @@ export default function App() {
         updatedAt: new Date().toISOString()
       };
       const saved = await apiSubmitApplication(payload);
-      setSubmittedReceipt(createDefaultCase(saved));
+      const normalized = createDefaultCase(saved);
+      const refCode = normalized.id.slice(-6).toUpperCase();
+
+      // Queue advisor completion notification & remove the temporary cloud draft
+      queueAdvisorCompletedEmail(normalized, refCode).catch(() => {});
+      apiDeleteDraft(resumeToken).catch(() => {});
+
+      setSubmittedReceipt(normalized);
       setClientDraft(createDefaultCase());
+      rotateFreshDraftSession();
       window.scrollTo({ top: 0, behavior: 'smooth' });
       addToast('Thank you! Your application has been securely sent to me.');
     } catch (err) {
@@ -562,6 +719,17 @@ export default function App() {
                         <ShieldCheck size={14} /> Private &amp; Confidential
                       </span>
                     </div>
+                  )}
+
+                  {clientStarted && (
+                    <ResumeLinkBar
+                      resumeUrl={resumeUrl}
+                      cloudSaved={cloudDraftSaved}
+                      emailedTo={resumeEmailedTo}
+                      onCopied={() =>
+                        addToast('Private resume link copied — paste it on any device to continue!')
+                      }
+                    />
                   )}
 
                   {renderWizard(clientDraft, updateClientDraft, false)}

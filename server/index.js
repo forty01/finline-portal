@@ -220,6 +220,39 @@ app.delete('/api/submissions/:id', requireAdvisor, (req, res) => {
   res.json({ ok: true });
 });
 
+// LOCAL FALLBACK: Separate client resume drafts (get-by-token only)
+const DRAFTS_DIR = path.join(DATA_DIR, 'drafts');
+fs.mkdirSync(DRAFTS_DIR, { recursive: true });
+
+app.put('/api/drafts/:token', (req, res) => {
+  const token = String(req.params.token || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (token.length < 32) return res.status(400).json({ error: 'Invalid token' });
+  fs.writeFileSync(path.join(DRAFTS_DIR, `${token}.json`), JSON.stringify(req.body || {}, null, 2));
+  res.json({ ok: true });
+});
+
+app.get('/api/drafts/:token', (req, res) => {
+  const token = String(req.params.token || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const file = path.join(DRAFTS_DIR, `${token}.json`);
+  if (token.length < 32 || !fs.existsSync(file)) return res.status(404).json({ error: 'Draft not found' });
+  res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+});
+
+app.delete('/api/drafts/:token', (req, res) => {
+  const token = String(req.params.token || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const file = path.join(DRAFTS_DIR, `${token}.json`);
+  if (token.length >= 32 && fs.existsSync(file)) fs.unlinkSync(file);
+  res.json({ ok: true });
+});
+
+app.post('/api/mail', (req, res) => {
+  const mailFile = path.join(DATA_DIR, 'mail_log.json');
+  const existing = fs.existsSync(mailFile) ? JSON.parse(fs.readFileSync(mailFile, 'utf8')) : [];
+  existing.unshift({ ...req.body, queuedAt: new Date().toISOString() });
+  fs.writeFileSync(mailFile, JSON.stringify(existing, null, 2));
+  res.status(201).json({ ok: true });
+});
+
 // Serve compiled production frontend (dist/)
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(DIST_DIR)) {

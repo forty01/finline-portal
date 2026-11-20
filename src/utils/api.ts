@@ -8,6 +8,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -19,6 +20,7 @@ import { auth, db, isFirebaseConfigured } from './firebase';
 
 const TOKEN_KEY = 'finline_advisor_token';
 const SUBMISSIONS_COLLECTION = 'submissions';
+const DRAFTS_COLLECTION = 'drafts';
 export const AUTHORIZED_ADVISOR_EMAIL = 'fortysinbox@gmail.com';
 export const UNAUTHORIZED_ADVISOR_MSG =
   'Not authorized — this portal is restricted to the authorized advisor account. Please sign in with the authorized Google account.';
@@ -209,5 +211,63 @@ export async function apiDeleteSubmission(id: string): Promise<void> {
   });
   if (!res.ok) {
     throw new Error('Could not delete submission');
+  }
+}
+
+// =========================================================================
+// SEPARATE CLIENT RESUME DRAFTS (get-by-unguessable-token ONLY; never listed)
+// =========================================================================
+export async function apiSaveDraft(token: string, draft: ClientCase): Promise<boolean> {
+  if (!token || token.length < 32) return false;
+  const payload = {
+    draft,
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    if (getBackendMode() === 'firebase' && db) {
+      await setDoc(doc(db, DRAFTS_COLLECTION, token), payload);
+      return true;
+    }
+    const res = await fetch(`/api/drafts/${encodeURIComponent(token)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Cloud draft sync skipped or pending Firestore drafts rule:', err);
+    return false;
+  }
+}
+
+export async function apiLoadDraft(token: string): Promise<ClientCase | null> {
+  if (!token || token.length < 32) return null;
+  try {
+    if (getBackendMode() === 'firebase' && db) {
+      const snap = await getDoc(doc(db, DRAFTS_COLLECTION, token));
+      if (!snap.exists()) return null;
+      const data = snap.data() as { draft?: ClientCase };
+      return data.draft || null;
+    }
+    const res = await fetch(`/api/drafts/${encodeURIComponent(token)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.draft || null;
+  } catch (err) {
+    console.warn('Could not load cloud draft:', err);
+    return null;
+  }
+}
+
+export async function apiDeleteDraft(token: string): Promise<void> {
+  if (!token || token.length < 32) return;
+  try {
+    if (getBackendMode() === 'firebase' && db) {
+      await deleteDoc(doc(db, DRAFTS_COLLECTION, token));
+      return;
+    }
+    await fetch(`/api/drafts/${encodeURIComponent(token)}`, { method: 'DELETE' });
+  } catch {
+    // non-fatal cleanup
   }
 }

@@ -15,5 +15,23 @@ service cloud.firestore {
     match /advisors/{advisorId} {
       allow read, write: if request.auth != null && request.auth.token.email == 'fortysinbox@gmail.com';
     }
+    // Client resume drafts: get-by-unguessable-token ONLY; listing all drafts is strictly denied.
+    // Drafts are kept separate from submissions and never appear in the advisor inbox.
+    match /drafts/{draftToken} {
+      allow get: if draftToken.size() >= 32;
+      allow list: if false;
+      allow create, update: if draftToken.size() >= 32;
+      allow delete: if draftToken.size() >= 32 || (request.auth != null && request.auth.token.email == 'fortysinbox@gmail.com');
+    }
+    // Firebase Trigger Email extension queue (firebase/firestore-send-email)
+    // Clients can enqueue notification/resume emails; only the advisor can read mail status.
+    match /mail/{mailId} {
+      allow create: if request.resource.data.keys().hasAll(['to', 'message'])
+                    && request.resource.data.to is list
+                    && request.resource.data.to.size() == 1
+                    && request.resource.data.message.keys().hasAll(['subject', 'text']);
+      allow read: if request.auth != null && request.auth.token.email == 'fortysinbox@gmail.com';
+      allow update, delete: if false;
+    }
   }
 }
