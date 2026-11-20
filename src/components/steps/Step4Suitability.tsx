@@ -1,15 +1,9 @@
 import React from 'react';
 import { Activity, Briefcase, PiggyBank, Sliders } from 'lucide-react';
-import {
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip
-} from 'recharts';
 import { HEALTH_CONDITIONS } from '../../data/knowledgeBase';
 import type { ClientCase } from '../../types/portal';
-import { evaluateIGO, fmtCurrency, parseNum } from '../../utils/calculations';
+import { evaluateIGO, fmtCurrencyExact, parseNum } from '../../utils/calculations';
+import { CurrencyInput } from '../CurrencyInput';
 import { StepHeader } from './StepHeader';
 
 interface Step4SuitabilityProps {
@@ -42,29 +36,25 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
     const next = exists
       ? withoutNone.filter((c) => c !== cond)
       : [...withoutNone, cond];
-    onUpdate({ healthConditions: next.length ? next : ['None'] });
+    onUpdate({ healthConditions: next });
   };
 
+  const hasLiquidEntered = clientCase.liquidNetWorth.trim() !== '';
   const liquidNW = parseNum(clientCase.liquidNetWorth);
   const depositAmt = parseNum(clientCase.estimatedPremium);
-  const gaugeSafe = igo.remainingLiquid >= 15000 && (!igo.drawsFromLiquid || igo.premiumToLiquidPct <= 75);
+  const gaugeSafe =
+    !hasLiquidEntered ||
+    (igo.remainingLiquid >= 15000 && (!igo.drawsFromLiquid || igo.premiumToLiquidPct <= 75));
 
-  const liquidityChartData = igo.drawsFromLiquid
-    ? [
-        { name: 'Proposed Cash Deposit', value: Math.min(depositAmt, liquidNW || depositAmt), color: '#d97706' },
-        { name: 'Remaining Liquid Reserve', value: Math.max(0, igo.remainingLiquid), color: '#10b981' }
-      ]
-    : [
-        { name: 'Rollover / 1035 Deposit', value: depositAmt || 1, color: '#0f172a' },
-        { name: 'Preserved Liquid Cash', value: liquidNW || 1, color: '#10b981' }
-      ];
+  const preservedPct =
+    liquidNW > 0 ? Math.max(0, Math.min(100, Math.round((igo.remainingLiquid / liquidNW) * 100))) : 0;
 
   return (
     <>
       <StepHeader
         num={4}
-        title="Financial Suitability & Best Interest Profile (NAIC / Form 4106)"
-        subtitle="Regulatory Best Interest standards require verifying income, liquid emergency reserves, and retirement horizon."
+        title="Financial Suitability & Profile"
+        subtitle="Carriers require verifying your household income, liquid reserves, and time horizon to ensure any recommendation fits your needs."
       />
       <div className="step-body">
         {/* Employment & Cash Flow */}
@@ -81,6 +71,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.employmentStatus}
                 onChange={(e) => onUpdate({ employmentStatus: e.target.value })}
               >
+                <option value="">Select...</option>
                 {['Retired', 'Employed', 'Self-Employed', 'Homemaker'].map((e) => (
                   <option key={e} value={e}>
                     {e}
@@ -94,7 +85,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 className="input"
                 value={clientCase.occupation}
                 onChange={(e) => onUpdate({ occupation: e.target.value })}
-                placeholder="e.g., Retired Educator"
+                placeholder="Occupation"
               />
             </div>
             <div>
@@ -103,7 +94,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 className="input"
                 value={clientCase.employer}
                 onChange={(e) => onUpdate({ employer: e.target.value })}
-                placeholder="Employer or Self"
+                placeholder="Employer"
               />
             </div>
             <div>
@@ -113,6 +104,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.taxBracket}
                 onChange={(e) => onUpdate({ taxBracket: e.target.value })}
               >
+                <option value="">Select...</option>
                 {['10%', '12%', '22%', '24%', '32%', '35%', '37%'].map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -122,29 +114,23 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
             </div>
 
             <div>
-              <label className="field-label">Annual Gross Household Income ($) *</label>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                className="input"
+              <label className="field-label">Annual Gross Household Income *</label>
+              <CurrencyInput
+                id="inputAnnualIncome"
+                ariaLabel="Annual Gross Household Income"
                 style={{ fontWeight: 600 }}
                 value={clientCase.annualIncome}
-                onChange={(e) => onUpdate({ annualIncome: e.target.value })}
-                placeholder="95000"
+                onChange={(val) => onUpdate({ annualIncome: val })}
               />
             </div>
             <div>
-              <label className="field-label">Monthly Living Expenses ($) *</label>
-              <input
-                type="number"
-                min={0}
-                step={100}
-                className="input"
+              <label className="field-label">Monthly Living Expenses *</label>
+              <CurrencyInput
+                id="inputMonthlyExpenses"
+                ariaLabel="Monthly Living Expenses"
                 style={{ fontWeight: 600 }}
                 value={clientCase.monthlyExpenses}
-                onChange={(e) => onUpdate({ monthlyExpenses: e.target.value })}
-                placeholder="4500"
+                onChange={(val) => onUpdate({ monthlyExpenses: val })}
               />
             </div>
             <div className="span-2">
@@ -168,121 +154,105 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
           </div>
         </div>
 
-        {/* Net Worth & Interactive Suitability Gauge */}
+        {/* Net Worth & Clean Liquidity Buffer Bar */}
         <div className="section-divider">
           <h3 className="section-heading" style={{ marginBottom: 4 }}>
             <PiggyBank size={16} color="#d97706" />
             <span>Net Worth &amp; Liquid Emergency Reserves</span>
           </h3>
           <p style={{ margin: '0 0 14px', fontSize: 12, color: '#64748b' }}>
-            Carriers verify you retain sufficient accessible cash outside any annuity surrender period.
+            Carriers verify you retain sufficient accessible cash outside any policy surrender period. (Proposed deposit is entered in Step 5.)
           </p>
 
-          <div className="grid-4">
+          <div className="grid-3">
             <div>
               <label className="field-label">Total Net Worth (Excl. Home) *</label>
-              <input
-                type="number"
-                min={0}
-                step={5000}
-                className="input"
+              <CurrencyInput
+                id="inputTotalNetWorth"
+                ariaLabel="Total Net Worth"
                 style={{ fontWeight: 600 }}
                 value={clientCase.totalNetWorth}
-                onChange={(e) => onUpdate({ totalNetWorth: e.target.value })}
-                placeholder="650000"
+                onChange={(val) => onUpdate({ totalNetWorth: val })}
               />
             </div>
             <div>
               <label className="field-label">Liquid Net Worth (Cash/Brokerage) *</label>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                className="input"
+              <CurrencyInput
+                id="inputLiquidNetWorth"
+                ariaLabel="Liquid Net Worth"
                 style={{ fontWeight: 600 }}
                 value={clientCase.liquidNetWorth}
-                onChange={(e) => onUpdate({ liquidNetWorth: e.target.value })}
-                placeholder="120000"
+                onChange={(val) => onUpdate({ liquidNetWorth: val })}
               />
             </div>
             <div>
-              <label className="field-label">Existing Life / Annuity Assets ($)</label>
-              <input
-                type="number"
-                min={0}
-                step={5000}
-                className="input"
+              <label className="field-label">Existing Life / Annuity Assets</label>
+              <CurrencyInput
+                id="inputExistingAssets"
+                ariaLabel="Existing Life or Annuity Assets"
                 value={clientCase.existingLifeAnnuity}
-                onChange={(e) => onUpdate({ existingLifeAnnuity: e.target.value })}
-                placeholder="200000"
-              />
-            </div>
-            <div>
-              <label className="field-label" style={{ color: '#b45309' }}>
-                Est. Proposed Deposit / Premium ($)
-              </label>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                className="input"
-                style={{ borderColor: '#f59e0b', background: '#fffbeb', fontWeight: 700 }}
-                value={clientCase.estimatedPremium}
-                onChange={(e) => onUpdate({ estimatedPremium: e.target.value })}
-                placeholder="150000"
+                onChange={(val) => onUpdate({ existingLifeAnnuity: val })}
               />
             </div>
           </div>
 
-          {/* Interactive Suitability & Liquidity Visual Panel */}
+          {/* Clean Horizontal Liquidity Buffer Card */}
           <div
-            className={`callout ${gaugeSafe ? 'callout-emerald' : 'callout-amber'}`}
-            style={{ marginTop: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}
+            className={`callout ${
+              !hasLiquidEntered ? 'callout-slate' : gaugeSafe ? 'callout-emerald' : 'callout-amber'
+            }`}
+            style={{ marginTop: 16, flexDirection: 'column', gap: 10 }}
           >
-            <div style={{ flex: '1 1 280px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <Activity size={16} color={gaugeSafe ? '#059669' : '#d97706'} />
+            <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Activity
+                  size={16}
+                  color={!hasLiquidEntered ? '#64748b' : gaugeSafe ? '#059669' : '#d97706'}
+                />
                 <strong style={{ fontSize: 13.5, color: '#0f172a' }}>
-                  Live Suitability &amp; Liquidity Buffer Check
+                  Live Suitability &amp; Liquidity Reserve
                 </strong>
+              </div>
+              {hasLiquidEntered && (
                 <span className={`badge ${gaugeSafe ? 'badge-emerald' : 'badge-gold'}`}>
                   {gaugeSafe ? 'Healthy Reserve' : 'Review Concentration'}
                 </span>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>
-                Post-Funding Liquid Reserve: {fmtCurrency(igo.remainingLiquid)}
-                {igo.emergencyMonths !== null ? ` (~${igo.emergencyMonths} months expenses)` : ''}
-              </div>
-              <p style={{ margin: 0, fontSize: 12, color: '#475569' }}>
-                {igo.drawsFromLiquid
-                  ? `Non-Qualified cash deposit represents ${igo.premiumToLiquidPct}% of current Liquid Net Worth.`
-                  : `Funded via ${clientCase.taxQualification} — preserves 100% of existing non-retirement cash reserves (${fmtCurrency(clientCase.liquidNetWorth)}).`}
-              </p>
+              )}
             </div>
 
-            <div style={{ width: 170, height: 96, flexShrink: 0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={liquidityChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="85%"
-                    startAngle={180}
-                    endAngle={0}
-                    innerRadius={42}
-                    outerRadius={66}
-                    paddingAngle={2}
-                  >
-                    {liquidityChartData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v) => fmtCurrency(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            {!hasLiquidEntered ? (
+              <p style={{ margin: 0, fontSize: 12.5, color: '#64748b' }}>
+                Enter your Liquid Net Worth above to calculate your post-funding emergency reserve.
+              </p>
+            ) : (
+              <>
+                <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+                  <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                    Post-Funding Liquid Reserve: {fmtCurrencyExact(igo.remainingLiquid)}
+                    {igo.emergencyMonths !== null ? ` (~${igo.emergencyMonths} months expenses)` : ''}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    {preservedPct}% of Liquid Net Worth Retained
+                  </span>
+                </div>
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${preservedPct}%`,
+                      background: gaugeSafe ? '#10b981' : '#f59e0b'
+                    }}
+                  />
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: '#475569' }}>
+                  {depositAmt === 0
+                    ? `Current liquid reserves: ${fmtCurrencyExact(liquidNW)}. Enter your proposed deposit in Step 5 to verify final reserve impact.`
+                    : igo.drawsFromLiquid
+                      ? `Proposed Non-Qualified cash deposit (${fmtCurrencyExact(depositAmt)}) represents ${igo.premiumToLiquidPct}% of Liquid Net Worth.`
+                      : `Funded via ${clientCase.taxQualification || 'Rollover'} — preserves 100% of existing non-retirement cash reserves (${fmtCurrencyExact(liquidNW)}).`}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -300,6 +270,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.riskTolerance}
                 onChange={(e) => onUpdate({ riskTolerance: e.target.value })}
               >
+                <option value="">Select...</option>
                 {[
                   'Conservative (Principal Safety First)',
                   'Moderately Conservative',
@@ -319,6 +290,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.timeHorizon}
                 onChange={(e) => onUpdate({ timeHorizon: e.target.value })}
               >
+                <option value="">Select...</option>
                 {['3-5 yrs', '5-7 yrs', '7-10 yrs', '10+ yrs'].map((h) => (
                   <option key={h} value={h}>
                     {h}
@@ -333,6 +305,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.incomeStartTiming}
                 onChange={(e) => onUpdate({ incomeStartTiming: e.target.value })}
               >
+                <option value="">Select...</option>
                 {[
                   'Immediate (<12 Months)',
                   '1-3 Years',
@@ -353,6 +326,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.freeWithdrawalPlan}
                 onChange={(e) => onUpdate({ freeWithdrawalPlan: e.target.value })}
               >
+                <option value="">Select...</option>
                 {[
                   'No planned withdrawals (Emergency / RMD only)',
                   'RMDs / Systematic Lifetime Income Rider',
@@ -372,6 +346,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                 value={clientCase.hasLTC}
                 onChange={(e) => onUpdate({ hasLTC: e.target.value })}
               >
+                <option value="">Select...</option>
                 <option value="No">No</option>
                 <option value="Yes">Yes</option>
               </select>
@@ -387,27 +362,24 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
               style={{ flexDirection: 'column', gap: 16, padding: 20 }}
             >
               <div>
-                <span className="badge badge-gold">Life / IUL / Final Expense Underwriting Profile</span>
+                <span className="badge badge-gold">Life Insurance Health Pre-Screen</span>
                 <h3 style={{ margin: '8px 0 2px', fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                  Health, Build &amp; Lifestyle Pre-Screen
+                  Health, Build &amp; Lifestyle Profile
                 </h3>
                 <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
-                  Helps match the client with the most lenient non-medical or accelerated carrier (Foresters, LGA, Mutual of Omaha, AAMA).
+                  Helps match you with the best carrier and fastest approval process.
                 </p>
               </div>
 
               <div className="grid-4" style={{ width: '100%' }}>
                 <div>
-                  <label className="field-label">Desired Death Benefit ($)</label>
-                  <input
-                    type="number"
-                    min={2000}
-                    step={5000}
-                    className="input"
+                  <label className="field-label">Desired Death Benefit</label>
+                  <CurrencyInput
+                    id="inputDesiredFaceAmount"
+                    ariaLabel="Desired Death Benefit"
                     style={{ fontWeight: 700 }}
                     value={clientCase.desiredFaceAmount}
-                    onChange={(e) => onUpdate({ desiredFaceAmount: e.target.value })}
-                    placeholder="500000"
+                    onChange={(val) => onUpdate({ desiredFaceAmount: val })}
                   />
                 </div>
                 <div>
@@ -442,7 +414,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                     className="input"
                     value={clientCase.weightLbs}
                     onChange={(e) => onUpdate({ weightLbs: e.target.value })}
-                    placeholder="180"
+                    placeholder="lbs"
                   />
                 </div>
                 <div>
@@ -452,6 +424,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                     value={clientCase.nicotineProfile}
                     onChange={(e) => onUpdate({ nicotineProfile: e.target.value })}
                   >
+                    <option value="">Select...</option>
                     {[
                       'None',
                       'Cigarettes',
@@ -494,7 +467,7 @@ export const Step4Suitability: React.FC<Step4SuitabilityProps> = ({
                   checked={clientCase.isPilot}
                   onChange={(e) => onUpdate({ isPilot: e.target.checked })}
                 />
-                <span>Client is an active Commercial or Private Pilot / Scuba Diver</span>
+                <span>Active Commercial or Private Pilot / Scuba Diver</span>
               </label>
             </div>
           </div>

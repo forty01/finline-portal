@@ -215,6 +215,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 value={clientCase.ownerMarital}
                 onChange={(e) => onUpdate({ ownerMarital: e.target.value })}
               >
+                <option value="">Select...</option>
                 {['Married', 'Single', 'Widowed', 'Divorced', 'Domestic Partner'].map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -230,20 +231,20 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 className="input"
                 value={clientCase.ownerPhone}
                 onChange={(e) => onUpdate({ ownerPhone: e.target.value })}
-                placeholder="(214) 555-0100"
+                placeholder="(555) 555-0100"
               />
             </div>
 
             <div className="span-2">
               <label className="field-label">
-                Email Address (Required for FireLight E-Signature) *
+                Email Address (Required for E-Signature) *
               </label>
               <input
                 type="email"
                 className="input"
                 value={clientCase.ownerEmail}
                 onChange={(e) => onUpdate({ ownerEmail: e.target.value })}
-                placeholder="client@example.com"
+                placeholder="you@example.com"
               />
             </div>
 
@@ -256,6 +257,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 className="input"
                 value={clientCase.yearsAtAddress}
                 onChange={(e) => onUpdate({ yearsAtAddress: e.target.value })}
+                placeholder="Years"
               />
             </div>
 
@@ -265,7 +267,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 className="input"
                 value={clientCase.ownerStreet}
                 onChange={(e) => onUpdate({ ownerStreet: e.target.value })}
-                placeholder="123 Main St"
+                placeholder="Street address"
               />
             </div>
 
@@ -277,6 +279,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                   value={clientCase.ownerState}
                   onChange={(e) => onUpdate({ ownerState: e.target.value })}
                 >
+                  <option value="">Select...</option>
                   {US_STATES.map((s) => (
                     <option key={s} value={s}>
                       {s}
@@ -290,7 +293,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                   className="input"
                   value={clientCase.ownerZip}
                   onChange={(e) => onUpdate({ ownerZip: e.target.value })}
-                  placeholder="75009"
+                  placeholder="ZIP code"
                 />
               </div>
             </div>
@@ -301,7 +304,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 className="input"
                 value={clientCase.ownerCity}
                 onChange={(e) => onUpdate({ ownerCity: e.target.value })}
-                placeholder="Celina"
+                placeholder="City"
               />
             </div>
 
@@ -453,6 +456,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 value={clientCase.idType}
                 onChange={(e) => onUpdate({ idType: e.target.value })}
               >
+                <option value="">Select...</option>
                 {["Driver's License", 'U.S. Passport', 'State Photo ID'].map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -477,6 +481,7 @@ export const Step2Owner: React.FC<Step2OwnerProps> = ({
                 value={clientCase.idState}
                 onChange={(e) => onUpdate({ idState: e.target.value })}
               >
+                <option value="">Select...</option>
                 <option value="US">U.S. Federal</option>
                 {US_STATES.map((s) => (
                   <option key={s} value={s}>

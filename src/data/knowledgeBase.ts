@@ -87,13 +87,20 @@ export const STEPS_META = [
   { num: 6, short: 'Review & Sign', title: 'IGO Review, Signature & Export' }
 ];
 
+export function getLocalDateString(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function createCaseId(): string {
   return 'case_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
 }
 
 export function createDefaultCase(overrides?: Partial<ClientCase>): ClientCase {
   const nowIso = new Date().toISOString();
-  const today = nowIso.split('T')[0];
+  const todayLocal = getLocalDateString();
 
   return {
     id: createCaseId(),
@@ -109,11 +116,11 @@ export function createDefaultCase(overrides?: Partial<ClientCase>): ClientCase {
       agentName: '',
       agentNPN: ''
     },
-    track: 'annuity',
+    track: '',
     dualReview: false,
-    goals: ['Lifetime Guaranteed Income', 'Principal Protection (0% Floor)'],
+    goals: [],
     targetProduct: 'Recommend Best Fit (Advisor)',
-    ownershipType: 'Individual',
+    ownershipType: '',
     trustName: '',
     trustDate: '',
     trusteeName: '',
@@ -122,87 +129,87 @@ export function createDefaultCase(overrides?: Partial<ClientCase>): ClientCase {
     ownerGender: '',
     ownerDOB: '',
     ownerSSN: '',
-    ownerMarital: 'Married',
+    ownerMarital: '',
     ownerEmail: '',
     ownerPhone: '',
     ownerStreet: '',
     ownerCity: '',
-    ownerState: 'TX',
+    ownerState: '',
     ownerZip: '',
-    yearsAtAddress: '5',
+    yearsAtAddress: '',
     prevAddress: '',
     annuitantSameAsOwner: true,
     annuitantName: '',
     annuitantDOB: '',
     annuitantGender: '',
     annuitantSSN: '',
-    annuitantRelationship: 'Spouse',
+    annuitantRelationship: '',
     jointOwnerName: '',
     jointOwnerDOB: '',
     jointOwnerGender: '',
     jointOwnerSSN: '',
-    jointOwnerRelationship: 'Spouse',
-    idType: "Driver's License",
+    jointOwnerRelationship: '',
+    idType: '',
     idNumber: '',
-    idState: 'TX',
+    idState: '',
     idIssueDate: '',
     idExpDate: '',
     beneficiaries: [
       { id: 'b1', type: 'Primary', name: '', relationship: '', dob: '', ssn: '', contact: '', share: 100 }
     ],
-    employmentStatus: 'Retired',
+    employmentStatus: '',
     occupation: '',
     employer: '',
     annualIncome: '',
     monthlyExpenses: '',
-    incomeSources: ['Social Security'],
-    taxBracket: '22%',
+    incomeSources: [],
+    taxBracket: '',
     totalNetWorth: '',
     liquidNetWorth: '',
     existingLifeAnnuity: '',
-    riskTolerance: 'Moderately Conservative',
-    timeHorizon: '10+ yrs',
-    incomeStartTiming: '4-7 Years',
-    freeWithdrawalPlan: 'No planned withdrawals (Emergency / RMD only)',
-    hasLTC: 'No',
+    riskTolerance: '',
+    timeHorizon: '',
+    incomeStartTiming: '',
+    freeWithdrawalPlan: '',
+    hasLTC: '',
     desiredFaceAmount: '',
-    heightFt: '5',
-    heightIn: '9',
+    heightFt: '',
+    heightIn: '',
     weightLbs: '',
-    nicotineProfile: 'None',
+    nicotineProfile: '',
     isPilot: false,
-    healthConditions: ['None'],
-    taxQualification: 'Traditional IRA',
+    healthConditions: [],
+    taxQualification: '',
     estimatedPremium: '',
-    fundingMethod: 'Direct Transfer/Rollover',
-    rmdSatisfied: 'Yes',
-    isReplacement: 'No',
+    fundingMethod: '',
+    rmdSatisfied: '',
+    isReplacement: '',
     currentCarrier: '',
     currentPolicyNumber: '',
     currentCarrierPhone: '',
     currentAccountValue: '',
-    currentSurrenderPct: '0',
+    currentSurrenderPct: '',
     hasRecentStatement: false,
     allocationMode: 'strategist',
     allocations: {
-      sp500Cap: 40,
-      sp500Trigger: 20,
-      dividendAristocrats: 15,
-      blackrockAdaptive: 15,
+      sp500Cap: 0,
+      sp500Trigger: 0,
+      dividendAristocrats: 0,
+      blackrockAdaptive: 0,
       nasdaqPremier: 0,
-      fixedAccount: 10
+      fixedAccount: 0
     },
     clientAcknowledged: false,
     clientSignature: '',
-    signedCityState: 'Celina, TX',
-    signatureDate: today,
+    signedCityState: '',
+    signatureDate: todayLocal,
     advisorNotes: '',
     ...overrides
   };
 }
 
 export function createSampleCase(type: 'annuity' | 'life' | 'bonus'): ClientCase {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
 
   if (type === 'annuity') {
     return createDefaultCase({

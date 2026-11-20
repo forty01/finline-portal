@@ -19,8 +19,10 @@ import {
   calculateAge,
   getAllocationTotal,
   isQualifiedPlan,
+  isRmdBlocked,
   parseNum
 } from '../../utils/calculations';
+import { CurrencyInput } from '../CurrencyInput';
 import { StepHeader } from './StepHeader';
 
 interface Step5FundingProps {
@@ -32,6 +34,7 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
   const ownerAge = calculateAge(clientCase.ownerDOB);
   const qualified = isQualifiedPlan(clientCase.taxQualification);
   const showRMD = ownerAge !== null && ownerAge >= 73 && qualified;
+  const rmdBlocked = isRmdBlocked(clientCase);
   const showTransferBlock =
     ['Direct Transfer/Rollover', '1035 Exchange'].includes(clientCase.fundingMethod) ||
     clientCase.isReplacement === 'Yes' ||
@@ -69,14 +72,16 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
       <StepHeader
         num={5}
         title="Funding, Rollovers, Replacements & Index Allocations"
-        subtitle="Specify tax qualification, rollover/transfer custodian details, RMD status, and index crediting strategy."
+        subtitle="Specify account type, proposed deposit, rollover details, RMD status, and index strategy."
+        badgeText={rmdBlocked ? 'RMD / Form 4083 Required' : undefined}
+        badgeTone={rmdBlocked ? 'blocked' : 'ok'}
       />
       <div className="step-body">
-        {/* Tax Qualification & Deposit */}
+        {/* Tax Qualification & Deposit (Single Source of Truth) */}
         <div>
           <h3 className="section-heading">
             <Banknote size={16} color="#d97706" />
-            <span>Tax Qualification &amp; Funding Source</span>
+            <span>Account Type &amp; Funding Source</span>
           </h3>
           <div className="grid-4">
             <div>
@@ -87,6 +92,7 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                 value={clientCase.taxQualification}
                 onChange={(e) => onUpdate({ taxQualification: e.target.value })}
               >
+                <option value="">Select...</option>
                 {[
                   'Non-Qualified',
                   'Traditional IRA',
@@ -104,19 +110,16 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
 
             <div>
               <label className="field-label">
-                {clientCase.track === 'annuity'
-                  ? 'Estimated Deposit / Premium ($) *'
-                  : 'Planned Annual/Initial Premium ($) *'}
+                {clientCase.track === 'life'
+                  ? 'Planned Annual / Initial Premium *'
+                  : 'Proposed Deposit / Rollover Amount *'}
               </label>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                className="input"
+              <CurrencyInput
+                id="inputEstimatedPremium"
+                ariaLabel="Proposed Deposit or Premium"
                 style={{ fontWeight: 700 }}
                 value={clientCase.estimatedPremium}
-                onChange={(e) => onUpdate({ estimatedPremium: e.target.value })}
-                placeholder="100000"
+                onChange={(val) => onUpdate({ estimatedPremium: val })}
               />
             </div>
 
@@ -127,10 +130,11 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                 value={clientCase.fundingMethod}
                 onChange={(e) => onUpdate({ fundingMethod: e.target.value })}
               >
+                <option value="">Select...</option>
                 {[
                   'Direct Transfer/Rollover',
                   '1035 Exchange',
-                  'Personal Check (Payable to American Equity Investment Life Insurance Company)',
+                  'Personal Check',
                   'ACH/Wire'
                 ].map((m) => (
                   <option key={m} value={m}>
@@ -145,8 +149,7 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
             <div className="callout callout-blue" style={{ marginTop: 12 }}>
               <Info size={16} color="#2563eb" style={{ flexShrink: 0 }} />
               <span>
-                <strong>Roth IRA Note:</strong> American Equity requires{' '}
-                <strong>Form 5305-RA (Roth IRA Endorsement)</strong> attached with the application.
+                <strong>Roth IRA Note:</strong> Form 5305-RA (Roth IRA Endorsement) will be included with your formal carrier application.
               </span>
             </div>
           )}
@@ -163,10 +166,10 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
           )}
         </div>
 
-        {/* Age 73+ RMD Alert */}
+        {/* Age 73+ RMD Gate */}
         {showRMD && (
           <div
-            className="callout callout-amber"
+            className={`callout ${rmdBlocked ? 'callout-rose' : 'callout-emerald'}`}
             style={{ flexDirection: 'column', gap: 12, borderWidth: 2 }}
           >
             <div style={{ display: 'flex', gap: 12 }}>
@@ -175,8 +178,8 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                   width: 36,
                   height: 36,
                   borderRadius: 10,
-                  background: '#f59e0b',
-                  color: '#020617',
+                  background: rmdBlocked ? '#e11d48' : '#059669',
+                  color: '#fff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -186,13 +189,11 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                 <CalendarClock size={18} />
               </div>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#78350f' }}>
-                  Age 73+ Required Minimum Distribution (RMD) Verification
+                <div style={{ fontSize: 14, fontWeight: 700, color: rmdBlocked ? '#9f1239' : '#065f46' }}>
+                  Age 73+ Required Minimum Distribution (RMD) Verification *
                 </div>
-                <p style={{ margin: '3px 0 0', fontSize: 12.5, color: '#92400e' }}>
-                  Because Owner is age <strong>{ownerAge}</strong> and funding via a Qualified account,
-                  IRS rules require confirming whether the current calendar year&apos;s RMD has already
-                  been taken prior to rolling over funds.
+                <p style={{ margin: '3px 0 0', fontSize: 12.5, color: rmdBlocked ? '#881337' : '#065f46' }}>
+                  Because the owner is age <strong>{ownerAge}</strong> and funding via a Qualified account ({clientCase.taxQualification}), IRS rules require satisfying the current calendar year&apos;s RMD or submitting Form 4083 before an IRA transfer can proceed.
                 </p>
               </div>
             </div>
@@ -206,7 +207,9 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                   padding: '11px 14px',
                   background: clientCase.rmdSatisfied === 'Yes' ? '#047857' : '#fff',
                   color: clientCase.rmdSatisfied === 'Yes' ? '#fff' : '#1e293b',
-                  borderColor: clientCase.rmdSatisfied === 'Yes' ? '#047857' : '#fbbf24'
+                  borderColor: clientCase.rmdSatisfied === 'Yes' ? '#047857' : '#cbd5e1',
+                  whiteSpace: 'normal',
+                  textAlign: 'left'
                 }}
               >
                 ✓ Yes — Current-year RMD has already been satisfied
@@ -218,14 +221,21 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                 style={{
                   justifyContent: 'flex-start',
                   padding: '11px 14px',
-                  background: clientCase.rmdSatisfied === 'No' ? '#0f172a' : '#fff',
-                  color: clientCase.rmdSatisfied === 'No' ? '#fbbf24' : '#1e293b',
-                  borderColor: clientCase.rmdSatisfied === 'No' ? '#0f172a' : '#fbbf24'
+                  background: clientCase.rmdSatisfied === 'No' ? '#be123c' : '#fff',
+                  color: clientCase.rmdSatisfied === 'No' ? '#fff' : '#1e293b',
+                  borderColor: clientCase.rmdSatisfied === 'No' ? '#be123c' : '#cbd5e1',
+                  whiteSpace: 'normal',
+                  textAlign: 'left'
                 }}
               >
                 ! No — Distribute RMD first / Complete Form 4083
               </button>
             </div>
+            {rmdBlocked && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#9f1239' }}>
+                Submission hold: Your application cannot be submitted until your current-year RMD is satisfied or Form 4083 is completed.
+              </div>
+            )}
           </div>
         )}
 
@@ -277,7 +287,7 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                     className="input"
                     value={clientCase.currentCarrier}
                     onChange={(e) => onUpdate({ currentCarrier: e.target.value })}
-                    placeholder="e.g., Fidelity, Schwab, Allianz"
+                    placeholder="Institution or carrier name"
                   />
                 </div>
                 <div>
@@ -300,15 +310,12 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                   />
                 </div>
                 <div>
-                  <label className="field-label">Estimated Current Value ($)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    className="input"
+                  <label className="field-label">Estimated Current Value</label>
+                  <CurrencyInput
+                    id="inputCurrentAccountValue"
+                    ariaLabel="Estimated Current Value"
                     value={clientCase.currentAccountValue}
-                    onChange={(e) => onUpdate({ currentAccountValue: e.target.value })}
-                    placeholder="250000"
+                    onChange={(val) => onUpdate({ currentAccountValue: val })}
                   />
                 </div>
                 <div>
@@ -321,7 +328,7 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                     className="input"
                     value={clientCase.currentSurrenderPct}
                     onChange={(e) => onUpdate({ currentSurrenderPct: e.target.value })}
-                    placeholder="0"
+                    placeholder="0%"
                   />
                 </div>
               </div>
@@ -353,12 +360,12 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
           )}
         </div>
 
-        {/* Index Crediting Allocation Builder with Live Donut Chart */}
+        {/* Index Crediting Allocation Builder */}
         {(clientCase.track === 'annuity' || clientCase.dualReview) && (
           <div className="section-divider">
             <h3 className="section-heading" style={{ marginBottom: 4 }}>
               <PieChartIcon size={16} color="#d97706" />
-              <span>American Equity Index &amp; Fixed Crediting Allocations</span>
+              <span>Index &amp; Fixed Crediting Allocations</span>
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 12, color: '#64748b' }}>
               All custom index allocations must use whole numbers and equal 100%.
@@ -402,7 +409,6 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                   background: '#fff'
                 }}
               >
-                {/* Preset Toolbar */}
                 <div
                   style={{
                     display: 'flex',
@@ -436,7 +442,6 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                 </div>
 
                 <div className="grid-3" style={{ alignItems: 'center' }}>
-                  {/* Sliders Column */}
                   <div className="span-2" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {INDEX_STRATEGIES.map((strat) => {
                       const val = Math.round(parseNum(clientCase.allocations[strat.key]));
@@ -500,7 +505,6 @@ export const Step5Funding: React.FC<Step5FundingProps> = ({ clientCase, onUpdate
                     })}
                   </div>
 
-                  {/* Interactive Recharts Donut Chart */}
                   <div
                     style={{
                       display: 'flex',

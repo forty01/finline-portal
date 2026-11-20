@@ -4,7 +4,6 @@ import {
   ArrowRight,
   FileCheck2,
   Lock,
-  Send,
   ShieldCheck
 } from 'lucide-react';
 import { AdvisorLoginModal } from './components/AdvisorLoginModal';
@@ -43,6 +42,7 @@ import {
   apiSubmitApplication,
   apiUpdateSubmission
 } from './utils/api';
+import { isRmdBlocked } from './utils/calculations';
 import {
   buildPlainTextSummary,
   exportCaseJSON,
@@ -50,7 +50,7 @@ import {
   generateFactFinderPDF
 } from './utils/exports';
 
-const CLIENT_DRAFT_KEY = 'finline_client_draft_v2';
+const CLIENT_DRAFT_KEY = 'finline_client_draft_v3';
 
 function loadClientDraft(): ClientCase {
   try {
@@ -61,7 +61,7 @@ function loadClientDraft(): ClientCase {
   } catch (err) {
     console.error('Failed to load client draft:', err);
   }
-  return createDefaultCase({ signedCityState: '' });
+  return createDefaultCase();
 }
 
 export default function App() {
@@ -83,6 +83,7 @@ export default function App() {
   );
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [clearDraftModalOpen, setClearDraftModalOpen] = useState<boolean>(false);
 
   const selectedAdvisorCase = useMemo(
     () => cases.find((c) => c.id === selectedCaseId) ?? cases[0] ?? null,
@@ -173,8 +174,28 @@ export default function App() {
     });
   };
 
+  const handleConfirmClearDraft = () => {
+    try {
+      localStorage.removeItem(CLIENT_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+    setClientDraft(createDefaultCase());
+    setSubmittedReceipt(null);
+    setClearDraftModalOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    addToast('Form cleared — ready to start fresh.');
+  };
+
   const handleSubmitClientApplication = async () => {
     if (submitting) return;
+    if (isRmdBlocked(clientDraft)) {
+      addToast(
+        'Cannot submit: Age 73+ Qualified plan requires satisfying current-year RMD or submitting Form 4083 first.',
+        'error'
+      );
+      return;
+    }
     if (!clientDraft.ownerName.trim()) {
       addToast('Please enter your Full Legal Name in Step 2 before submitting.', 'warning');
       updateClientDraft({ currentStep: 2 });
@@ -195,7 +216,7 @@ export default function App() {
       };
       const saved = await apiSubmitApplication(payload);
       setSubmittedReceipt(createDefaultCase(saved));
-      setClientDraft(createDefaultCase({ signedCityState: '' }));
+      setClientDraft(createDefaultCase());
       window.scrollTo({ top: 0, behavior: 'smooth' });
       addToast('Thank you! Your application has been securely sent to me.');
     } catch (err) {
@@ -371,6 +392,7 @@ export default function App() {
               clientCase={activeForm}
               privacyMask={privacyMask}
               isAdvisor={advisorEditing}
+              submitting={submitting}
               onUpdate={onUpdateForm}
               onGoToStep={goToStep}
               onSubmitClientApplication={handleSubmitClientApplication}
@@ -383,7 +405,13 @@ export default function App() {
             />
           );
         default:
-          return <Step1Track clientCase={activeForm} onUpdate={onUpdateForm} />;
+          return (
+            <Step1Track
+              clientCase={activeForm}
+              isAdvisor={advisorEditing}
+              onUpdate={onUpdateForm}
+            />
+          );
       }
     };
 
@@ -431,17 +459,7 @@ export default function App() {
                       <span>Save &amp; Continue</span>
                       <ArrowRight size={15} color="#fbbf24" />
                     </button>
-                  ) : !advisorEditing ? (
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={handleSubmitClientApplication}
-                      className="btn btn-gold btn-lg"
-                    >
-                      <Send size={15} />
-                      <span>{submitting ? 'Submitting...' : 'Submit Application'}</span>
-                    </button>
-                  ) : (
+                  ) : advisorEditing ? (
                     <button
                       type="button"
                       onClick={() => setAdvisorTab('carrier-sheet')}
@@ -450,7 +468,7 @@ export default function App() {
                       <span>Open Carrier Entry Sheet</span>
                       <ArrowRight size={15} />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </form>
@@ -479,6 +497,7 @@ export default function App() {
         privacyMask={privacyMask}
         onTogglePrivacyMask={() => setPrivacyMask((v) => !v)}
         onOpenAdvisorLogin={() => setLoginModalOpen(true)}
+        onClearClientDraft={() => setClearDraftModalOpen(true)}
         onExitAdvisor={() => {
           apiAdvisorLogout().finally(() => {
             setIsAdvisor(false);
@@ -675,6 +694,15 @@ export default function App() {
         confirmLabel="Yes, Delete"
         onCancel={() => setDeleteTargetId(null)}
         onConfirm={handleConfirmDelete}
+      />
+
+      <ConfirmModal
+        open={clearDraftModalOpen}
+        title="Clear Form & Start Over?"
+        description="This will erase all entries you've typed so far and reset the application to a blank form."
+        confirmLabel="Yes, Clear Form"
+        onCancel={() => setClearDraftModalOpen(false)}
+        onConfirm={handleConfirmClearDraft}
       />
 
       <ToastContainer toasts={toasts} />

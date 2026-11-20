@@ -12,6 +12,7 @@ import {
   HeartPulse,
   Lock,
   LogOut,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   Upload
@@ -29,6 +30,7 @@ interface HeaderProps {
   onTogglePrivacyMask: () => void;
   onOpenAdvisorLogin: () => void;
   onExitAdvisor: () => void;
+  onClearClientDraft: () => void;
   onLoadSample: (type: 'annuity' | 'life' | 'bonus') => void;
   onImportJson: (file: File) => void;
 }
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTogglePrivacyMask,
   onOpenAdvisorLogin,
   onExitAdvisor,
+  onClearClientDraft,
   onLoadSample,
   onImportJson
 }) => {
@@ -237,14 +240,25 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={onOpenAdvisorLogin}
-                className="btn btn-sm btn-gold-outline"
-              >
-                <Lock size={13} />
-                <span>Advisor Login</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={onClearClientDraft}
+                  className="btn btn-sm btn-dark"
+                  title="Clear all fields and start a fresh application"
+                >
+                  <RotateCcw size={13} color="#94a3b8" />
+                  <span>Clear / Start Over</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAdvisorLogin}
+                  className="btn btn-sm btn-gold-outline"
+                >
+                  <Lock size={13} />
+                  <span>Advisor Login</span>
+                </button>
+              </>
             )}
           </div>
         </div>

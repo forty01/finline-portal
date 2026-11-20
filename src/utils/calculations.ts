@@ -34,6 +34,17 @@ export function fmtCurrency(val: unknown): string {
   }).format(n);
 }
 
+export function fmtCurrencyExact(val: unknown): string {
+  if (val === null || val === undefined || String(val).trim() === '') return '—';
+  const n = parseNum(val);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(n);
+}
+
 export function maskValue(val: string, masked: boolean, type: 'ssn' | 'id' = 'ssn'): string {
   if (!val) return '—';
   if (!masked) return val;
@@ -56,6 +67,11 @@ export function isQualifiedPlan(taxQualification: string): boolean {
     '401(k)/403(b)/457 Rollover',
     'SEP-IRA'
   ].includes(taxQualification);
+}
+
+export function isRmdBlocked(c: ClientCase): boolean {
+  const age = calculateAge(c.ownerDOB);
+  return age !== null && age >= 73 && isQualifiedPlan(c.taxQualification) && c.rmdSatisfied !== 'Yes';
 }
 
 export function getBeneficiaryTotals(c: ClientCase) {
@@ -91,12 +107,14 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
   const liquidNW = parseNum(c.liquidNetWorth);
   const monthlyExp = parseNum(c.monthlyExpenses);
   const qualified = isQualifiedPlan(c.taxQualification);
+  const rmdBlocked = isRmdBlocked(c);
   const needsTransferInfo =
     ['Direct Transfer/Rollover', '1035 Exchange'].includes(c.fundingMethod) ||
     c.isReplacement === 'Yes' ||
     c.taxQualification === '1035 Tax-Free Exchange';
 
   const drawsFromLiquid =
+    Boolean(c.taxQualification) &&
     !qualified &&
     c.taxQualification !== '1035 Tax-Free Exchange' &&
     c.fundingMethod !== '1035 Exchange';
@@ -111,7 +129,8 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
       status:
         (qualified && c.ownershipType === 'Joint') || (qualified && !c.annuitantSameAsOwner)
           ? 'fail'
-          : c.ownerName.trim() &&
+          : c.ownershipType &&
+              c.ownerName.trim() &&
               c.ownerDOB &&
               c.ownerSSN.trim() &&
               (c.ownershipType !== 'Trust' || (c.trustName.trim() && c.trusteeName.trim()))
@@ -126,24 +145,24 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
               ? c.trustName
                 ? 'Trust-Owned: Attach Trust Cover, Trustee Pages & Signature Page.'
                 : 'Missing Trust Name / Trustee details.'
-              : c.ownerName.trim() && c.ownerDOB && c.ownerSSN.trim()
+              : c.ownershipType && c.ownerName.trim() && c.ownerDOB && c.ownerSSN.trim()
                 ? 'Valid Owner/Annuitant legal profile.'
-                : 'Complete Owner Name, DOB, and SSN/TIN.'
+                : 'Complete Ownership Type, Owner Name, DOB, and SSN/TIN.'
     },
     {
       id: 'patriot_id',
       title: 'USA PATRIOT Act Photo ID',
       status:
-        !c.idNumber.trim() || !c.idExpDate
+        !c.idType || !c.idNumber.trim() || !c.idExpDate
           ? 'warn'
           : isIdExpired(c.idExpDate)
             ? 'fail'
             : 'pass',
       detail: isIdExpired(c.idExpDate)
         ? `Expired ID (${c.idExpDate}) — Unexpired government photo ID is mandatory.`
-        : c.idNumber.trim() && c.idExpDate
-          ? `${c.idType} (${c.idState}) valid through ${c.idExpDate}.`
-          : 'Enter Government Photo ID number and expiration date.'
+        : c.idType && c.idNumber.trim() && c.idExpDate
+          ? `${c.idType} (${c.idState || '—'}) valid through ${c.idExpDate}.`
+          : 'Enter Government Photo ID type, number, and expiration date.'
     },
     {
       id: 'beneficiaries',
@@ -180,48 +199,42 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
         !c.annualIncome || !c.liquidNetWorth
           ? 'Enter Household Income and Liquid Net Worth for Best Interest review.'
           : drawsFromLiquid && premium > liquidNW * 0.75
-            ? `High concentration: Cash deposit is ${premiumToLiquidPct}% of Liquid Net Worth (${fmtCurrency(remainingLiquid)} left).`
-            : `Post-funding liquid reserve: ${fmtCurrency(remainingLiquid)}${emergencyMonths !== null ? ` (~${emergencyMonths} mos expenses)` : ''}.`
+            ? `High concentration: Cash deposit is ${premiumToLiquidPct}% of Liquid Net Worth (${fmtCurrencyExact(remainingLiquid)} left).`
+            : `Post-funding liquid reserve: ${fmtCurrencyExact(remainingLiquid)}${emergencyMonths !== null ? ` (~${emergencyMonths} mos expenses)` : ''}.`
     },
     {
       id: 'allocations',
       title:
-        c.track === 'annuity'
-          ? 'Index Crediting Allocations (100%)'
-          : 'Coverage Face Amount & Health Profile',
+        c.track === 'life'
+          ? 'Coverage Face Amount & Health Profile'
+          : 'Index Crediting Allocations (100%)',
       status:
-        c.track === 'annuity'
-          ? allocTotal === 100
+        c.track === 'life'
+          ? parseNum(c.desiredFaceAmount) > 0
             ? 'pass'
-            : 'fail'
-          : parseNum(c.desiredFaceAmount) > 0
+            : 'warn'
+          : allocTotal === 100
             ? 'pass'
-            : 'warn',
+            : 'fail',
       detail:
-        c.track === 'annuity'
-          ? c.allocationMode === 'strategist'
+        c.track === 'life'
+          ? parseNum(c.desiredFaceAmount) > 0
+            ? `Target Coverage: ${fmtCurrencyExact(c.desiredFaceAmount)} • Nicotine: ${c.nicotineProfile || '—'}.`
+            : 'Enter desired Life / IUL face amount.'
+          : c.allocationMode === 'strategist'
             ? 'Advisor-guided whole-number strategy selection.'
             : allocTotal === 100
               ? 'Custom whole-number index allocations equal 100%.'
               : `Custom allocations total ${allocTotal}% (Must equal exactly 100%).`
-          : parseNum(c.desiredFaceAmount) > 0
-            ? `Target Coverage: ${fmtCurrency(c.desiredFaceAmount)} • Nicotine: ${c.nicotineProfile}.`
-            : 'Enter desired Life / IUL face amount.'
     },
     {
       id: 'rmd_alert',
       title: 'Age 73+ RMD & Form 4083 Check',
-      status:
-        ownerAge !== null && ownerAge >= 73 && qualified
-          ? c.rmdSatisfied === 'Yes'
-            ? 'pass'
-            : 'warn'
-          : 'pass',
-      detail:
-        ownerAge !== null && ownerAge >= 73 && qualified
-          ? c.rmdSatisfied === 'Yes'
-            ? `Client Age ${ownerAge}: Current-year RMD confirmed satisfied.`
-            : `ACTION REQUIRED (Age ${ownerAge}): Satisfy current-year RMD or submit Form 4083 prior to IRA transfer!`
+      status: rmdBlocked ? 'fail' : 'pass',
+      detail: rmdBlocked
+        ? `BLOCKED (Age ${ownerAge}): Satisfy current-year RMD or submit Form 4083 prior to IRA transfer!`
+        : ownerAge !== null && ownerAge >= 73 && qualified
+          ? `Client Age ${ownerAge}: Current-year RMD confirmed satisfied.`
           : 'No current-year RMD transfer restriction triggered.'
     },
     {
@@ -261,11 +274,13 @@ export function getStepStatus(c: ClientCase, stepNum: number): 'complete' | 'inc
   const ben = getBeneficiaryTotals(c);
   switch (stepNum) {
     case 1:
-      return c.goals.length > 0 ? 'complete' : 'incomplete';
+      return Boolean(c.track) && c.goals.length > 0 ? 'complete' : 'incomplete';
     case 2:
-      return c.ownerName.trim() &&
+      return c.ownershipType &&
+        c.ownerName.trim() &&
         c.ownerDOB &&
         c.ownerSSN.trim() &&
+        c.idType &&
         c.idNumber.trim() &&
         !isIdExpired(c.idExpDate)
         ? 'complete'
@@ -281,16 +296,17 @@ export function getStepStatus(c: ClientCase, stepNum: number): 'complete' | 'inc
         ? 'complete'
         : 'incomplete';
     case 5:
-      if (c.track === 'annuity') {
-        return parseNum(c.estimatedPremium) >= 5000 && getAllocationTotal(c) === 100
+      if (isRmdBlocked(c)) return 'incomplete';
+      if (c.track === 'life') {
+        return parseNum(c.estimatedPremium) > 0 || parseNum(c.desiredFaceAmount) > 0
           ? 'complete'
           : 'incomplete';
       }
-      return parseNum(c.estimatedPremium) > 0 || parseNum(c.desiredFaceAmount) > 0
+      return parseNum(c.estimatedPremium) >= 5000 && getAllocationTotal(c) === 100
         ? 'complete'
         : 'incomplete';
     case 6:
-      return c.clientAcknowledged && c.clientSignature.trim().length > 2
+      return !isRmdBlocked(c) && c.clientAcknowledged && c.clientSignature.trim().length > 2
         ? 'complete'
         : 'incomplete';
     default:

@@ -1,5 +1,5 @@
-export type AppTrack = 'annuity' | 'life';
-export type OwnershipType = 'Individual' | 'Joint' | 'Trust';
+export type AppTrack = 'annuity' | 'life' | '';
+export type OwnershipType = 'Individual' | 'Joint' | 'Trust' | '';
 export type BeneficiaryType = 'Primary' | 'Contingent';
 export type AllocationMode = 'strategist' | 'custom';
 export type CaseStatus = 'Draft' | 'In Review' | 'IGO Ready' | 'Submitted';
