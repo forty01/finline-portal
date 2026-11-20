@@ -239,17 +239,17 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
     },
     {
       id: 'replacement_docs',
-      title: 'Rollover / 1035 / Replacement Statement',
+      title: 'Rollover / 1035 / Replacement Details',
       status: !needsTransferInfo
         ? 'pass'
-        : c.currentCarrier.trim() && c.currentPolicyNumber.trim() && c.hasRecentStatement
+        : c.currentCarrier.trim() && c.currentPolicyNumber.trim()
           ? 'pass'
           : 'warn',
       detail: !needsTransferInfo
         ? 'New cash funding (no transfer/replacement forms required).'
-        : c.currentCarrier.trim() && c.currentPolicyNumber.trim() && c.hasRecentStatement
-          ? `${c.currentCarrier} (#${c.currentPolicyNumber}) + Recent Statement ready.`
-          : 'Transfer/Replacement requires Current Carrier, Policy #, and Recent Account Statement.'
+        : c.currentCarrier.trim() && c.currentPolicyNumber.trim()
+          ? `${c.currentCarrier} (#${c.currentPolicyNumber})${c.hasRecentStatement ? ' • Recent Statement ready' : ''}.`
+          : 'Transfer/Replacement requires Current Institution/Carrier Name and Account/Policy #.'
     }
   ];
 
@@ -267,6 +267,24 @@ export function evaluateIGO(c: ClientCase): IGOEvaluation {
     passCount,
     failCount,
     scorePct
+  };
+}
+
+export function getReadinessSummary(c: ClientCase) {
+  const igo = evaluateIGO(c);
+  const rmdBlocked = isRmdBlocked(c);
+  const isIgoReady = !rmdBlocked && igo.failCount === 0 && igo.passCount === igo.checks.length;
+  const label = rmdBlocked
+    ? 'HOLD: RMD / FORM 4083 REQUIRED'
+    : isIgoReady
+      ? 'IGO READY'
+      : 'PENDING REQUIRED DETAILS';
+  return {
+    igo,
+    rmdBlocked,
+    isIgoReady,
+    label,
+    countText: `${igo.passCount}/${igo.checks.length}`
   };
 }
 

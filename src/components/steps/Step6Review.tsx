@@ -14,13 +14,12 @@ import {
 } from 'lucide-react';
 import type { CaseStatus, ClientCase } from '../../types/portal';
 import {
-  evaluateIGO,
   fmtCurrencyExact,
   getAllocationTotal,
   getBeneficiaryTotals,
+  getReadinessSummary,
   isIdExpired,
   isQualifiedPlan,
-  isRmdBlocked,
   maskValue,
   parseNum
 } from '../../utils/calculations';
@@ -51,10 +50,10 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
   onCopyFireLight,
   onExportJSON
 }) => {
-  const igo = evaluateIGO(clientCase);
+  const readiness = getReadinessSummary(clientCase);
+  const { igo, rmdBlocked, isIgoReady: igoReady, countText } = readiness;
   const benTotals = getBeneficiaryTotals(clientCase);
   const allocTotal = getAllocationTotal(clientCase);
-  const rmdBlocked = isRmdBlocked(clientCase);
 
   const personalReady =
     Boolean(clientCase.ownershipType) &&
@@ -75,20 +74,13 @@ export const Step6Review: React.FC<Step6ReviewProps> = ({
   const signedAndAcked =
     clientCase.clientAcknowledged && clientCase.clientSignature.trim().length > 2;
 
-  const igoReady =
-    !rmdBlocked &&
-    personalReady &&
-    financialReady &&
-    allocTotal === 100 &&
-    igo.failCount === 0;
-
   const canSubmit = !rmdBlocked && signedAndAcked && !submitting;
 
   const headerBadgeText = rmdBlocked
-    ? 'Blocked: RMD / Form 4083 Required'
+    ? `Blocked: RMD / Form 4083 (${countText})`
     : igoReady
-      ? 'IGO Ready'
-      : 'Pending Required Details';
+      ? `IGO Ready (${countText})`
+      : `Pending Details (${countText})`;
   const headerBadgeTone: 'blocked' | 'ok' | 'pending' = rmdBlocked
     ? 'blocked'
     : igoReady

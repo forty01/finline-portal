@@ -3,28 +3,21 @@ import autoTable from 'jspdf-autotable';
 import { getLocalDateString, INDEX_STRATEGIES } from '../data/knowledgeBase';
 import type { ClientCase } from '../types/portal';
 import {
-  evaluateIGO,
   fmtCurrencyExact,
+  getReadinessSummary,
   isQualifiedPlan,
-  isRmdBlocked,
   maskValue,
   parseNum
 } from './calculations';
 
 export function buildPlainTextSummary(c: ClientCase, privacyMask: boolean, advisorMode: boolean): string {
-  const igo = evaluateIGO(c);
-  const rmdBlocked = isRmdBlocked(c);
-  const statusBanner = rmdBlocked
-    ? 'HOLD — AGE 73+ RMD / FORM 4083 REQUIRED BEFORE TRANSFER'
-    : igo.failCount === 0 && igo.passCount === igo.checks.length
-      ? 'IGO READY'
-      : c.status.toUpperCase();
+  const { igo, rmdBlocked, label: statusBanner, countText } = getReadinessSummary(c);
 
   const lines = [
     '==============================================================',
     'THE FIN-LINE AGENCY | GFI ADVISORY — CLIENT APPLICATION SUMMARY',
     '==============================================================',
-    `Status: ${statusBanner} | IGO Checks: ${igo.passCount}/${igo.checks.length} (${igo.scorePct}%)`,
+    `Status: ${statusBanner} | IGO Checks: ${countText} (${igo.scorePct}%)`,
     `Track: ${c.track === 'annuity' ? 'Retirement Savings & Income (Annuity)' : c.track === 'life' ? 'Life Insurance / IUL / Final Expense' : '—'}`,
     `Target Product Series: ${c.targetProduct}`,
     `Primary Objectives: ${c.goals.join(', ') || 'None selected'}`,
@@ -92,17 +85,10 @@ export function buildPlainTextSummary(c: ClientCase, privacyMask: boolean, advis
 }
 
 export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advisorMode: boolean): void {
-  const igo = evaluateIGO(c);
-  const rmdBlocked = isRmdBlocked(c);
+  const { igo, rmdBlocked, label: headerStatus, countText } = getReadinessSummary(c);
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-
-  const headerStatus = rmdBlocked
-    ? 'HOLD: RMD / FORM 4083 REQUIRED'
-    : igo.failCount === 0 && igo.passCount === igo.checks.length
-      ? 'IGO READY'
-      : c.status.toUpperCase();
 
   // Top Navy Header Banner
   doc.setFillColor(15, 23, 42);
@@ -123,7 +109,7 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
   doc.setTextColor(rmdBlocked ? 254 : 251, rmdBlocked ? 205 : 191, rmdBlocked ? 211 : 36);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(`${headerStatus}  |  IGO: ${igo.passCount}/${igo.checks.length}`, pageWidth - 36, 32, { align: 'right' });
+  doc.text(`${headerStatus}  |  IGO: ${countText}`, pageWidth - 36, 32, { align: 'right' });
   doc.setTextColor(226, 232, 240);
   doc.setFont('helvetica', 'normal');
   doc.text(`Date: ${c.signatureDate || getLocalDateString()}`, pageWidth - 36, 48, { align: 'right' });
@@ -160,11 +146,11 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
     cursorY += 54;
   }
 
-  // Section 1: Track & Objectives
+  // Section 1: Track & Objectives (Full-width colSpan header)
   autoTable(doc, {
     startY: cursorY,
     showHead: 'firstPage',
-    head: [['1. Application Track & Financial Objectives', '']],
+    head: [[{ content: '1. Application Track & Financial Objectives', colSpan: 2 }]],
     body: [
       [
         'Application Track',
@@ -188,11 +174,11 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
   cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
   // Section 2: Owner & Patriot Act ID
-  ensureSpace(140);
+  ensureSpace(155);
   autoTable(doc, {
     startY: cursorY,
     showHead: 'firstPage',
-    head: [['2. Owner, Annuitant & USA PATRIOT Act Verification (Form 2000)', '']],
+    head: [[{ content: '2. Owner, Annuitant & USA PATRIOT Act Verification (Form 2000)', colSpan: 2 }]],
     body: [
       ['Ownership Registration', `${c.ownershipType || '—'}${c.ownershipType === 'Trust' ? ` — ${c.trustName} (Trustee: ${c.trusteeName})` : ''}`],
       ['Primary Owner', `${c.ownerName || '—'}  |  DOB: ${c.ownerDOB || '—'} ${igo.ownerAge !== null ? `(Age ${igo.ownerAge})` : ''}  |  ${c.ownerGender || '—'}`],
@@ -211,27 +197,31 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
 
   cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
-  // Section 3: Beneficiaries (Strictly before Section 4)
-  ensureSpace(90);
+  // Section 3: Beneficiaries (Full-width colSpan banner + clean 2-column layout to guarantee strict text-layer ordering)
+  ensureSpace(95);
   autoTable(doc, {
     startY: cursorY,
     showHead: 'firstPage',
-    head: [['3. Beneficiaries — Type', 'Full Legal Name', 'Relationship', 'DOB', 'Share %']],
-    body: c.beneficiaries.map((b) => [b.type, b.name || '—', b.relationship || '—', b.dob || '—', `${b.share}%`]),
+    head: [[{ content: '3. Beneficiary Designations', colSpan: 2 }]],
+    body: c.beneficiaries.map((b, idx) => [
+      `${idx + 1}. ${b.type} Beneficiary (${b.share}%)`,
+      `${b.name || '—'}  |  Relationship: ${b.relationship || '—'}  |  DOB: ${b.dob || '—'}${b.contact ? `  |  Contact: ${b.contact}` : ''}`
+    ]),
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: [251, 191, 36], fontSize: 9 },
+    headStyles: { fillColor: [15, 23, 42], textColor: [251, 191, 36], fontSize: 9.5 },
     styles: { fontSize: 8.5, cellPadding: 4.5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 165 } },
     margin: { left: 36, right: 36 }
   });
 
   cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
   // Section 4: Financial Suitability (Strictly after Section 3)
-  ensureSpace(160);
+  ensureSpace(175);
   autoTable(doc, {
     startY: cursorY,
     showHead: 'firstPage',
-    head: [['4. NAIC Financial Suitability & Liquidity Profile (Form 4106)', '']],
+    head: [[{ content: '4. NAIC Financial Suitability & Liquidity Profile (Form 4106)', colSpan: 2 }]],
     body: [
       ['Employment & Tax Bracket', `${c.employmentStatus || '—'} (${c.occupation || '—'})  |  Fed Tax Bracket: ${c.taxBracket || '—'}`],
       ['Income & Expenses', `Annual Gross: ${fmtCurrencyExact(c.annualIncome)} (${c.incomeSources.join(', ') || '—'})  |  Monthly Exp: ${fmtCurrencyExact(c.monthlyExpenses)}`],
@@ -261,8 +251,8 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
 
   cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
-  // Section 5: Funding & Allocations (Prevent split/duplicate header!)
-  ensureSpace(150);
+  // Section 5: Funding & Allocations (Full-width colSpan banner)
+  ensureSpace(160);
   const allocSummary =
     c.allocationMode === 'strategist'
       ? 'Finalize exact whole-number allocations together'
@@ -273,7 +263,7 @@ export function generateFactFinderPDF(c: ClientCase, privacyMask: boolean, advis
   autoTable(doc, {
     startY: cursorY,
     showHead: 'firstPage',
-    head: [['5. Funding, Rollover / Replacement & Index Strategy', '']],
+    head: [[{ content: '5. Funding, Rollover / Replacement & Index Strategy', colSpan: 2 }]],
     body: [
       ['Tax Qualification & Deposit', `${c.taxQualification || '—'}  |  Proposed Deposit: ${fmtCurrencyExact(c.estimatedPremium)}`],
       ['Funding Method & Replacement', `${c.fundingMethod || '—'}  |  Replacement: ${c.isReplacement || '—'}`],
