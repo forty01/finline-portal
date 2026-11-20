@@ -1,0 +1,19 @@
+// NOTE: The live rules published in the Firebase Console (project: gen-lang-client-0937767860)
+// additionally contain the SinglePeaches app's rule blocks, which are managed directly in the
+// Firebase Console and must NOT be removed from there. This file tracks only the FIN-Line
+// portal's Firestore rule blocks.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Public intake: anyone with the link can CREATE a submission
+    match /submissions/{submissionId} {
+      allow create: if true;
+      allow read, update, delete: if request.auth != null && request.auth.token.email == 'fortysinbox@gmail.com';
+    }
+    // Advisors: full access to their own advisor docs
+    match /advisors/{advisorId} {
+      allow read, write: if request.auth != null && request.auth.token.email == 'fortysinbox@gmail.com';
+    }
+  }
+}
