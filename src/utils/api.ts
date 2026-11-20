@@ -1,6 +1,7 @@
 import {
+  GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithEmailAndPassword,
+  signInWithPopup,
   signOut
 } from 'firebase/auth';
 import {
@@ -73,31 +74,32 @@ export async function apiSubmitApplication(data: ClientCase): Promise<ClientCase
   return json.submission;
 }
 
-export async function apiAdvisorLogin(
-  email: string,
-  password: string
-): Promise<{ advisor: { email: string; name: string } }> {
-  if (getBackendMode() === 'firebase' && auth) {
-    const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+export async function apiAdvisorGoogleLogin(): Promise<{
+  advisor: { email: string; name: string };
+}> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not initialized.');
+  }
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    const cred = await signInWithPopup(auth, provider);
     return {
       advisor: {
-        email: cred.user.email || email.trim(),
+        email: cred.user.email || '',
         name: cred.user.displayName || 'FIN-Line Advisor'
       }
     };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      throw new Error('Sign-in was cancelled. Click "Continue with Google" to try again.');
+    }
+    if (code === 'auth/popup-blocked') {
+      throw new Error('Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.');
+    }
+    throw new Error(err instanceof Error ? err.message : 'Google sign-in failed.');
   }
-
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(json.error || 'Login failed');
-  }
-  setSavedToken(json.token);
-  return { advisor: json.advisor };
 }
 
 export async function apiAdvisorLogout(): Promise<void> {
